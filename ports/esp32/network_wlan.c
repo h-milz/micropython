@@ -311,7 +311,8 @@ static mp_obj_t network_wlan_connect(size_t n_args, const mp_obj_t *pos_args, mp
     enum { ARG_ssid, ARG_key, ARG_bssid,
            ARG_eap_method, ARG_username, ARG_password,
            ARG_identity, ARG_ca_cert, ARG_ttls_phase2_method,
-           ARG_client_cert, ARG_private_key, ARG_private_key_password, ARG_disable_time_check };
+           ARG_client_cert, ARG_private_key, ARG_private_key_password, ARG_disable_time_check,
+           ARG_force_wpa3 };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_, MP_ARG_OBJ, {.u_obj = mp_const_none} },
         { MP_QSTR_, MP_ARG_OBJ, {.u_obj = mp_const_none} },
@@ -325,7 +326,8 @@ static mp_obj_t network_wlan_connect(size_t n_args, const mp_obj_t *pos_args, mp
         { MP_QSTR_client_cert, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = mp_const_none} },
         { MP_QSTR_private_key, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = mp_const_none} },
         { MP_QSTR_private_key_password, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = mp_const_none} },
-        { MP_QSTR_disable_time_check, MP_ARG_KW_ONLY | MP_ARG_BOOL, {.u_bool = false} }
+        { MP_QSTR_disable_time_check, MP_ARG_KW_ONLY | MP_ARG_BOOL, {.u_bool = false} },
+        { MP_QSTR_force_wpa3, MP_ARG_KW_ONLY | MP_ARG_BOOL, {.u_bool = false} }         // if true, enforces WPA3-SAE or WPA3 Enterprise
     };
 
     // parse args
@@ -360,6 +362,26 @@ static mp_obj_t network_wlan_connect(size_t n_args, const mp_obj_t *pos_args, mp
         }
         wifi_sta_config.sta.bssid_set = 1;
         memcpy(wifi_sta_config.sta.bssid, p, sizeof(wifi_sta_config.sta.bssid));
+    }
+
+    if (eap_method == WIFI_AUTH_EAP_NONE) {
+        if (args[ARG_force_wpa3].u_bool == true) {
+            // WPA3-PSK, or rather, WPA3-SAE
+            wifi_sta_config.sta.threshold.authmode = WIFI_AUTH_WPA3_PSK;
+            wifi_sta_config.sta.pmf_cfg.required = true;
+        } else {
+            wifi_sta_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+        }
+    } else {
+        // WPA2/3 Enterprise
+        if (args[ARG_force_wpa3].u_bool == true) {
+            wifi_sta_config.sta.threshold.authmode = WIFI_AUTH_WPA3_ENTERPRISE;
+            // in fact, the only difference between WPA2 and WPA3 Enterprise is PMF
+            wifi_sta_config.sta.pmf_cfg.required = true;
+        } else {
+            // default is WPA2/3 transition mode; PMF optional
+            wifi_sta_config.sta.threshold.authmode = WIFI_AUTH_WPA2_ENTERPRISE;
+        }
     }
 
     esp_exceptions(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_sta_config));
